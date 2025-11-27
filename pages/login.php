@@ -37,7 +37,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $_SESSION['nivel'] = $user['nivel'];
 
                 // Redireciona para o dashboard
-                header('Location: pages/home.php');
+                header('Location: home.php');
                 exit;
             } else {
                 $erro = "Senha incorreta!";

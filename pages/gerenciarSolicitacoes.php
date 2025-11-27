@@ -20,32 +20,54 @@ if (isset($_POST['acao'], $_POST['id'])) {
     mysqli_stmt_bind_param($stmt, "si", $acao, $id);
 
     if (mysqli_stmt_execute($stmt)) {
-        // Buscar o ID do usuário que fez a solicitação
-        $userQuery = "SELECT id_usuario FROM solicitacoes WHERE id = ?";
-        $userStmt = mysqli_prepare($conn, $userQuery);
-        mysqli_stmt_bind_param($userStmt, "i", $id);
-        mysqli_stmt_execute($userStmt);
-        mysqli_stmt_bind_result($userStmt, $id_usuario_solicitante);
-        mysqli_stmt_fetch($userStmt);
-        mysqli_stmt_close($userStmt);
 
-        // Cria notificação automática para o usuário solicitante
-        if ($id_usuario_solicitante) {
-            $mensagem = ($acao === 'Aprovada')
-                ? "✅ Sua solicitação #$id foi aprovada."
-                : "❌ Sua solicitação #$id foi recusada.";
+    // 🔹 Buscar material e quantidade solicitada
+    $solQuery = "SELECT id_material, quantidade FROM solicitacoes WHERE id = ?";
+    $solStmt = mysqli_prepare($conn, $solQuery);
+    mysqli_stmt_bind_param($solStmt, "i", $id);
+    mysqli_stmt_execute($solStmt);
+    mysqli_stmt_bind_result($solStmt, $id_material, $quantidadeSolicitada);
+    mysqli_stmt_fetch($solStmt);
+    mysqli_stmt_close($solStmt);
 
-            $notifQuery = "INSERT INTO notificacoes (id_solicitacao, id_usuario, mensagem) VALUES (?, ?, ?)";
-            $notifStmt = mysqli_prepare($conn, $notifQuery);
-            mysqli_stmt_bind_param($notifStmt, "iis", $id, $id_usuario_solicitante, $mensagem);
-            mysqli_stmt_execute($notifStmt);
-            mysqli_stmt_close($notifStmt);
-        }
-
-        $_SESSION['msg'] = "✅ Solicitação #$id marcada como $acao.";
-    } else {
-        $_SESSION['msg'] = "❌ Erro ao atualizar a solicitação.";
+    // 🔹 Atualiza estoque somente se aprovado
+    if ($acao === 'Aprovada') {
+        $updateEstoque = "UPDATE materiais SET quantidade = quantidade - ? WHERE id = ?";
+        $estStmt = mysqli_prepare($conn, $updateEstoque);
+        mysqli_stmt_bind_param($estStmt, "ii", $quantidadeSolicitada, $id_material);
+        mysqli_stmt_execute($estStmt);
+        mysqli_stmt_close($estStmt);
     }
+
+    // 🔹 Buscar o ID do usuário que fez a solicitação
+    $userQuery = "SELECT id_usuario FROM solicitacoes WHERE id = ?";
+    $userStmt = mysqli_prepare($conn, $userQuery);
+    mysqli_stmt_bind_param($userStmt, "i", $id);
+    mysqli_stmt_execute($userStmt);
+    mysqli_stmt_bind_result($userStmt, $id_usuario_solicitante);
+    mysqli_stmt_fetch($userStmt);
+    mysqli_stmt_close($userStmt);
+
+    // 🔹 Criar notificação
+    if ($id_usuario_solicitante) {
+        $mensagem = ($acao === 'Aprovada')
+            ? "✅ Sua solicitação #$id foi aprovada."
+            : "❌ Sua solicitação #$id foi recusada.";
+
+        $notifQuery = "INSERT INTO notificacoes (id_solicitacao, id_usuario, mensagem)
+                       VALUES (?, ?, ?)";
+        $notifStmt = mysqli_prepare($conn, $notifQuery);
+        mysqli_stmt_bind_param($notifStmt, "iis", $id, $id_usuario_solicitante, $mensagem);
+        mysqli_stmt_execute($notifStmt);
+        mysqli_stmt_close($notifStmt);
+    }
+
+    $_SESSION['msg'] = "✅ Solicitação #$id marcada como $acao.";
+
+} else {
+    $_SESSION['msg'] = "❌ Erro ao atualizar a solicitação.";
+}
+
 
     mysqli_stmt_close($stmt);
     header("Location: gerenciarSolicitacoes.php");
@@ -182,54 +204,88 @@ $notifCount = mysqli_num_rows($resultNotif);
             <div class="card shadow">
                 <div class="card-body table-responsive">
                     <table class="table table-bordered table-hover align-middle">
-                        <thead class="table-primary text-center">
-                            <tr>
-                                <th>ID</th>
-                                <th>Material</th>
-                                <th>Quantidade</th>
-                                <th>Finalidade</th>
-                                <th>Solicitado por</th>
-                                <th>Data</th>
-                                <th>Status</th>
-                                <th>Ações</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                        <?php while ($row = mysqli_fetch_assoc($result)) : ?>
-                            <tr>
-                                <td class="text-center"><?= $row['id'] ?></td>
-                                <td><?= htmlspecialchars($row['nome_material']) ?></td>
-                                <td class="text-center"><?= $row['quantidade'] ?></td>
-                                <td><?= htmlspecialchars($row['finalidade']) ?></td>
-                                <td><?= htmlspecialchars($row['usuario'] ?? 'Desconhecido') ?></td>
-                                <td><?= date('d/m/Y H:i', strtotime($row['data_solicitacao'])) ?></td>
-                                <td class="text-center">
-                                    <?php
-                                    $statusClass = match ($row['status']) {
-                                        'Aprovada' => 'badge bg-success',
-                                        'Recusada' => 'badge bg-danger',
-                                        default => 'badge bg-warning text-dark',
-                                    };
-                                    ?>
-                                    <span class="<?= $statusClass ?>"><?= $row['status'] ?></span>
-                                </td>
-                                <td class="text-center">
-                                    <?php if ($row['status'] === 'Pendente') : ?>
-                                        <form method="POST" class="d-inline">
-                                            <input type="hidden" name="id" value="<?= $row['id'] ?>">
-                                            <button name="acao" value="aceitar" class="btn btn-success btn-sm">✅ Aceitar</button>
-                                        </form>
-                                        <form method="POST" class="d-inline">
-                                            <input type="hidden" name="id" value="<?= $row['id'] ?>">
-                                            <button name="acao" value="recusar" class="btn btn-danger btn-sm">❌ Recusar</button>
-                                        </form>
-                                    <?php else : ?>
-                                        <small class="text-muted">Sem ações</small>
-                                    <?php endif; ?>
-                                </td>
-                            </tr>
-                        <?php endwhile; ?>
-                        </tbody>
+                        <div class="row row-cols-1 row-cols-md-2 row-cols-xl-3 g-4">
+    <?php while ($row = mysqli_fetch_assoc($result)) : ?>
+        <div class="col">
+            <div class="card shadow-sm border-0 h-100">
+
+                <div class="card-body">
+                    <h5 class="card-title fw-bold"><?= htmlspecialchars($row['nome_material']) ?></h5>
+
+                    <p class="mb-1"><strong>Quantidade:</strong> <?= $row['quantidade'] ?></p>
+                    <p class="mb-1"><strong>Finalidade:</strong> <?= htmlspecialchars($row['finalidade']) ?></p>
+                    <p class="mb-1"><strong>Solicitado por:</strong> <?= htmlspecialchars($row['usuario'] ?? 'Desconhecido') ?></p>
+                    <p class="mb-1"><strong>Data:</strong> <?= date('d/m/Y H:i', strtotime($row['data_solicitacao'])) ?></p>
+
+                    <div class="mt-3">
+
+    <?php if ($row['status'] === 'Pendente') : ?>
+
+        <!-- Botão que abre o modal -->
+        <button class="btn btn-warning w-100" data-bs-toggle="modal" data-bs-target="#modalAcao<?= $row['id'] ?>">
+            ⚠️ Ação necessária
+        </button>
+
+        <!-- Modal -->
+        <div class="modal fade" id="modalAcao<?= $row['id'] ?>" tabindex="-1">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content">
+
+                    <div class="modal-header">
+                        <h5 class="modal-title">Gerir Solicitação #<?= $row['id'] ?></h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+
+                    <div class="modal-body">
+                        <p>O que deseja fazer com esta solicitação?</p>
+                    </div>
+
+                    <div class="modal-footer">
+                        <form method="POST" class="d-inline">
+                            <input type="hidden" name="id" value="<?= $row['id'] ?>">
+                            <button name="acao" value="aceitar" class="btn btn-success">
+                                ✅ Aprovar
+                            </button>
+                        </form>
+
+                        <form method="POST" class="d-inline">
+                            <input type="hidden" name="id" value="<?= $row['id'] ?>">
+                            <button name="acao" value="recusar" class="btn btn-danger">
+                                ❌ Recusar
+                            </button>
+                        </form>
+
+                        <button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+
+    <?php else : ?>
+
+        <?php
+        $statusClass = match ($row['status']) {
+            'Aprovada' => 'badge bg-success',
+            'Recusada' => 'badge bg-danger',
+            default => 'badge bg-warning text-dark',
+        };
+        ?>
+        <span class="<?= $statusClass ?> px-3 py-2 w-100 d-block text-center">
+            <?= $row['status'] ?>
+        </span>
+
+    <?php endif; ?>
+
+</div>
+
+                </div>
+
+            </div> 
+        </div>
+    <?php endwhile; ?>
+</div>
+
                     </table>
                 </div>
             </div>

@@ -32,6 +32,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
     $stmt_check->close();
 
+    
 
     // Inserir material
     $sql = "INSERT INTO materiais (nome, categoria, quantidade) VALUES (?, ?, ?)";
